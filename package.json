@@ -12,8 +12,12 @@
 		"smoke": "tsx src/dev/smoke.ts",
 		"lint:quests": "tsx src/dev/lint-quests.ts"
 	},
+	"dependencies": {
+		"cookie": "^0.6.0"
+	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.8.19",
+		"@types/cookie": "^0.6.0",
 		"@types/node": "^25.0.2",
 		"tsx": "^4.21.0",
 		"typescript": "^5.5.2",
