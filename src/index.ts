@@ -32,6 +32,7 @@ import { getCookie, setCookie } from './http/cookies';
 import { generateUUID } from './http/uuid';
 import { stateToJSON, deserializeState, serializeState, type StoredState } from './http/state-serialization';
 import { PlayerStateDO } from './infra/playerStateDO';
+import { summarize } from './domain/narrative';
 
 // Export Durable Object class for wrangler binding
 export { PlayerStateDO };
@@ -222,12 +223,15 @@ export default {
 				return Response.json({ error: 'Failed to save state', details: String(error) }, { status: 500 });
 			}
 
+			const narrative = summarize(result.events, result.state);
+
 			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
 			responseHeaders.set('Content-Type', 'application/json');
 			
 			return new Response(JSON.stringify({
 				state: stateToJSON(result.state),
 				events: result.events,
+				narrative,
 			}), {
 				headers: responseHeaders,
 			});
@@ -252,17 +256,18 @@ export default {
 				return Response.json({ error: 'Failed to save state', details: String(error) }, { status: 500 });
 			}
 
+			const narrative = summarize(result.events, result.state);
+
 			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
 			responseHeaders.set('Content-Type', 'application/json');
 			
-			const response = new Response(JSON.stringify({
+			return new Response(JSON.stringify({
 				state: stateToJSON(result.state),
 				events: result.events,
+				narrative,
 			}), {
 				headers: responseHeaders,
 			});
-
-			return response;
 		}
 
 		// GET /debug/do - debug endpoint to check DO state
