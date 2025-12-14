@@ -1,6 +1,16 @@
+/**
+ * Manual test instructions:
+ * 
+ * npm run dev
+ * curl http://localhost:8787/api/quests
+ */
+
 import type { CharacterState } from './domain/state';
 import { tick, startQuest, completeQuest } from './domain/engine';
 import { catalog } from './quests/catalog';
+import { chooseQuests } from './domain/rules';
+import type { QuestNodeWithAvailability } from './domain/quests';
+import type { QuestCardDTO } from './http/dto';
 
 /**
  * Worker "vertical slice" endpoint:
@@ -22,6 +32,20 @@ function makeInitialState(nowMs: number): CharacterState {
 			nowMs,
 			lastMeaningfulActionMs: nowMs - 10 * 24 * 60 * 60 * 1000, // ~10 days ago
 		},
+	};
+}
+
+/**
+ * Converts a QuestNodeWithAvailability to a QuestCardDTO (excludes consequence and availability).
+ */
+function toQuestCardDTO(quest: QuestNodeWithAvailability): QuestCardDTO {
+	return {
+		id: quest.id,
+		type: quest.type,
+		context: quest.context,
+		realWorldAction: quest.realWorldAction,
+		constraint: quest.constraint,
+		reflection: quest.reflection,
 	};
 }
 
@@ -84,9 +108,26 @@ export default {
 			return Response.json(result);
 		}
 
-		// keep the root path simple so you know the worker is alive
+		// GET /api/quests - returns 0-3 quest cards selected by quest logic
+		if (url.pathname === '/api/quests' && request.method === 'GET') {
+			const nowMs = Date.now();
+			const state = makeInitialState(nowMs);
+
+			// Get all quests from catalog
+			const allQuests = catalog.listAll?.() ?? [];
+
+			// Use rules pipeline directly: filter → rank → select
+			const selectedQuests = chooseQuests(state, allQuests, nowMs, 3);
+
+			// Convert to DTOs (excludes consequence and availability)
+			const questCards: QuestCardDTO[] = selectedQuests.map(toQuestCardDTO);
+
+			return Response.json({ quests: questCards });
+		}
+
+		// GET / - simple health check
 		if (url.pathname === '/' && request.method === 'GET') {
-			return new Response('Worker alive. POST /api/smoke');
+			return new Response('Worker alive');
 		}
 
 		return new Response('Not Found', { status: 404 });

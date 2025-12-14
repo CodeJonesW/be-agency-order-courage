@@ -6,9 +6,11 @@
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
+		"pretest": "npm run lint:quests",
 		"test": "vitest",
 		"cf-typegen": "wrangler types",
-		"smoke": "tsx src/dev/smoke.ts"
+		"smoke": "tsx src/dev/smoke.ts",
+		"lint:quests": "tsx src/dev/lint-quests.ts"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.8.19",
