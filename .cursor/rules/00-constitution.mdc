@@ -1,0 +1,37 @@
+---
+description: Core constitution for be-game-1 / fe-game-1. Always obey docs before coding.
+alwaysApply: true
+---
+
+# Constitution (Non-Negotiable)
+You are implementing a "life-as-a-game" RPG system. Life is the game; progress must be rooted in real-world initiation.
+
+## Canonical docs (must consult)
+- docs/ethos.md
+- docs/identity_arc.md
+- docs/stats.md
+- docs/quests.md
+- docs/time.md
+
+## Decision hierarchy (conflicts)
+1) docs/ethos.md
+2) docs/identity_arc.md
+3) docs/stats.md
+4) docs/quests.md
+5) docs/time.md
+6) implementation convenience (last)
+
+## Hard bans
+- No XP / levels / streaks / daily bonuses
+- No quest lists that behave like todo apps
+- No punishment for absence (time is neutral; stagnation over decay)
+- Stats must move slowly; no grind loops
+- Quests require real-world action + meaningful friction
+
+## Required response format for any change
+- Constraints (from docs):
+- Proposed approach:
+- Non-goals:
+- Implementation plan:
+- Risks:
+

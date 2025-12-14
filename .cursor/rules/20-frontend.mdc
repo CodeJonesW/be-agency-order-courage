@@ -1,0 +1,22 @@
+---
+description: Frontend rule for fe-game-1. Calm, serious UI; avoid gamified visuals that imply XP/levels/streaks.
+globs: fe-game-1/**
+alwaysApply: false
+---
+
+# Frontend Guidance (fe-game-1)
+
+## UI tone
+- Calm, grounded, non-coercive.
+- No streak visuals, no "XP bars", no dopamine UI.
+
+## UX principles
+- Always frame quests as a choice, not an obligation.
+- One meaningful quest can define a day: prefer sparse screens.
+- Reflection is optional; never force journaling.
+
+## Anti-patterns
+- “Daily quests” UI
+- Pushy reminders language
+- Reward animations that encourage grinding
+

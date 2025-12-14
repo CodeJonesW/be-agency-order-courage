@@ -1,0 +1,22 @@
+---
+description: Backend rule for be-game-1. Prefer state-machine / rules-first design; keep APIs minimal.
+globs: be-game-1/**
+alwaysApply: false
+---
+
+# Backend Guidance (be-game-1)
+
+## Architectural intent
+- Build a "life engine" first: state transitions, quest graph, time behavior.
+- UI and endpoints are views into the engine, not the source of truth.
+
+## Implementation priorities
+1) Domain models (CharacterState, QuestNode, QuestRun, Flags)
+2) Deterministic state transitions (pure functions where possible)
+3) Persistence layer (simple, explicit)
+4) API routes last
+
+## Anti-patterns
+- Don’t encode game meaning in UI strings or ad-hoc route logic.
+- Don’t add endpoints “because we might need them later.”
+

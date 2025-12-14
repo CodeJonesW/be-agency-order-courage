@@ -1,0 +1,55 @@
+---
+description: Highest-leverage backend constraint: implement the Life Engine (state machine + rules) before APIs/UI/DB complexity.
+globs: be-game-1/**
+alwaysApply: false
+---
+
+# State Machine First (be-game-1)
+
+## Goal
+Build the "Life Engine" as deterministic domain logic before building routes, persistence details, or UI.
+
+The backend is not "controllers + DB".
+The backend is a **rule-driven state transition system** with storage.
+
+## Required build order (do not skip)
+1) Define domain types (CharacterState, QuestNode, QuestRun, Flags, TimeContext)
+2) Implement pure functions:
+   - evaluateAvailableQuests(state, time) -> QuestNode[]
+   - applyQuestStarted(state, questId, time) -> newState + events
+   - applyQuestCompleted(state, questId, payload, time) -> newState + events
+   - applyTimeTick(state, time) -> newState + events (stagnation/re-entry logic)
+3) Add unit tests for these pure functions
+4) Add persistence (simple repository interface)
+5) Add API routes last (thin layer that calls the engine)
+
+## Non-negotiables (from docs)
+- No XP/levels/streaks/daily bonuses
+- Quests are decisions with real-world friction (not todo items)
+- Time is neutral; stagnation over decay; never shame
+- Stats move slowly; no grind loops
+
+## Architecture constraints
+- Business meaning must not live in route handlers.
+- Route handlers should be thin: validate -> call engine -> persist -> return.
+- Prefer "events" returned by engine to drive narrative/flags without embedding side effects.
+
+## Language-agnostic interfaces (choose one stack but keep shape)
+
+### If Node/TypeScript
+- Prefer `src/domain/*` for pure logic and types
+- Prefer `src/infra/*` for db/adapters
+- Prefer `src/http/*` for routes
+
+### If Python
+- Prefer `domain/*` for pure logic and dataclasses/pydantic models
+- Prefer `infra/*` for db/adapters
+- Prefer `http/*` for routes
+
+## Output format requirement
+For any backend change, include:
+- Constraints (quoted from docs)
+- Engine changes (pure functions)
+- Tests added/updated
+- Non-goals
+

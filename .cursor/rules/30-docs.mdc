@@ -1,0 +1,18 @@
+---
+description: Documentation rule for docs/*. Keep docs canonical, constraint-heavy, and agent-readable.
+globs: docs/**
+alwaysApply: false
+---
+
+# Docs Guidance
+
+## Writing constraints
+- Declarative rules > opinions
+- Explicit bans > vague preferences
+- Short sections with strong headings
+- Repeat non-negotiables verbatim when needed
+
+## Update policy
+- Prefer adding clarifying sections over rewriting history.
+- If a major decision changes, append to a decisions log rather than silently editing intent.
+
