@@ -26,7 +26,7 @@ function makeInitialState(nowMs: number): CharacterState {
 }
 
 export default {
-	async fetch(request: Request): Promise<Response> {
+	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const url = new URL(request.url);
 
 		if (url.pathname === '/api/smoke' && request.method === 'POST') {
