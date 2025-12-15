@@ -32,12 +32,14 @@ import { getCookie, setCookie } from './http/cookies';
 import { generateUUID } from './http/uuid';
 import { stateToJSON, deserializeState, serializeState, type StoredState } from './http/state-serialization';
 import { PlayerStateDO } from './infra/playerStateDO';
+import { ShareLinkDO } from './infra/shareLinkDO';
 import { summarize } from './domain/narrative';
 import type { Receipt } from './http/receipt';
 import { generateDefaultShareText } from './http/receipt';
+import type { ShareLink, ShareLinkData } from './http/share-link';
 
-// Export Durable Object class for wrangler binding
-export { PlayerStateDO };
+// Export Durable Object classes for wrangler binding
+export { PlayerStateDO, ShareLinkDO };
 
 /**
  * Worker "vertical slice" endpoint:
@@ -112,6 +114,125 @@ function getOrCreatePlayerId(request: Request): { playerId: string; headers?: He
 function getPlayerDO(env: Env, playerId: string): DurableObjectStub {
 	const id = env.PLAYER_STATE_DO.idFromName(playerId);
 	return env.PLAYER_STATE_DO.get(id);
+}
+
+/**
+ * Gets the Durable Object stub for a share link (keyed by token).
+ */
+function getShareLinkDO(env: Env, token: string): DurableObjectStub {
+	const id = env.SHARE_LINK_DO.idFromName(token);
+	return env.SHARE_LINK_DO.get(id);
+}
+
+/**
+ * Generates HTML page for public receipt view.
+ */
+function generateReceiptPage(receipt: ShareLinkData['receipt']): string {
+	const typeColors = {
+		agency: '#6b8e9f',
+		courage: '#d4a574',
+		order: '#8b6f7e',
+	};
+
+	const typeLabels = {
+		agency: 'Agency',
+		courage: 'Courage',
+		order: 'Order',
+	};
+
+	const color = typeColors[receipt.questType];
+	const label = typeLabels[receipt.questType];
+
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>${receipt.title}</title>
+	<style>
+		* {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+		}
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+			background: #0a0a0a;
+			color: #e0e0e0;
+			min-height: 100vh;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			padding: 2rem;
+		}
+		.receipt-page {
+			background: linear-gradient(135deg, #2a1f1a 0%, #1a1510 100%);
+			border: 3px solid ${color};
+			border-radius: 8px;
+			padding: 3rem;
+			max-width: 600px;
+			width: 100%;
+			box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+		}
+		.receipt-page__badge {
+			display: inline-block;
+			padding: 0.5rem 1rem;
+			border-radius: 4px;
+			font-size: 0.875rem;
+			font-weight: 600;
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+			color: #fff;
+			margin-bottom: 1.5rem;
+			background: ${color};
+		}
+		.receipt-page__title {
+			font-size: 2rem;
+			font-weight: 600;
+			color: #fff;
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+			margin-bottom: 1rem;
+		}
+		.receipt-page__line {
+			font-size: 1.2rem;
+			line-height: 1.6;
+			color: #d0d0d0;
+			margin-bottom: 2rem;
+		}
+		.receipt-page__share {
+			margin-top: 2rem;
+			padding-top: 2rem;
+			border-top: 2px solid rgba(139, 115, 85, 0.3);
+		}
+		.receipt-page__share-text {
+			font-size: 1.1rem;
+			line-height: 1.6;
+			color: #c0c0c0;
+			font-style: italic;
+		}
+		.receipt-page__meta {
+			margin-top: 2rem;
+			padding-top: 1.5rem;
+			border-top: 1px solid rgba(139, 115, 85, 0.2);
+			font-size: 0.9rem;
+			color: #888;
+			text-align: center;
+		}
+	</style>
+</head>
+<body>
+	<div class="receipt-page">
+		<div class="receipt-page__badge">${label}</div>
+		<h1 class="receipt-page__title">${receipt.title}</h1>
+		<p class="receipt-page__line">${receipt.line}</p>
+		<div class="receipt-page__share">
+			<p class="receipt-page__share-text">${receipt.shareText}</p>
+		</div>
+		<div class="receipt-page__meta">A recent step</div>
+	</div>
+</body>
+</html>`;
 }
 
 /**
@@ -442,7 +563,7 @@ export default {
 		}
 
 		// GET /api/receipts/:id - get a specific receipt
-		if (url.pathname.startsWith('/api/receipts/') && request.method === 'GET') {
+		if (url.pathname.startsWith('/api/receipts/') && !url.pathname.endsWith('/share') && request.method === 'GET') {
 			const { playerId, headers: cookieHeaders } = getOrCreatePlayerId(request);
 			const pathParts = url.pathname.split('/');
 			const receiptId = pathParts[pathParts.length - 1];
@@ -462,6 +583,96 @@ export default {
 
 			return new Response(JSON.stringify(await response.json()), {
 				headers: responseHeaders,
+			});
+		}
+
+		// POST /api/receipts/:id/share - create or get share link
+		if (url.pathname.startsWith('/api/receipts/') && url.pathname.endsWith('/share') && request.method === 'POST') {
+			const { playerId, headers: cookieHeaders } = getOrCreatePlayerId(request);
+			const pathParts = url.pathname.split('/');
+			const receiptId = pathParts[pathParts.length - 2]; // Get receipt id before '/share'
+			const doStub = getPlayerDO(env, playerId);
+
+			// Verify receipt exists for this player
+			const receiptResponse = await doStub.fetch(new Request(`http://do/receipts/${receiptId}`, { method: 'GET' }));
+			if (!receiptResponse.ok) {
+				return Response.json({ error: 'Receipt not found' }, { status: 404 });
+			}
+
+			const receiptData = await receiptResponse.json<{ receipt: Receipt }>();
+			const receipt = receiptData.receipt;
+
+			// Generate token
+			const token = crypto.randomUUID();
+
+			// Create share link data
+			const shareLinkData: ShareLinkData = {
+				shareLink: {
+					token,
+					receiptId: receipt.id,
+					createdAtMs: nowMs,
+				},
+				receipt: {
+					questType: receipt.questType,
+					tone: receipt.tone,
+					title: receipt.title,
+					line: receipt.line,
+					shareText: receipt.shareText,
+				},
+			};
+
+			// Store in ShareLinkDO (keyed by token)
+			const shareLinkDOStub = getShareLinkDO(env, token);
+			const saveResponse = await shareLinkDOStub.fetch(
+				new Request('http://do/', {
+					method: 'PUT',
+					body: JSON.stringify(shareLinkData),
+					headers: { 'Content-Type': 'application/json' },
+				})
+			);
+
+			if (!saveResponse.ok) {
+				return Response.json({ error: 'Failed to create share link' }, { status: 500 });
+			}
+
+			// Generate public URL
+			const publicUrl = `${url.origin}/r/${token}`;
+
+			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
+			responseHeaders.set('Content-Type', 'application/json');
+
+			return new Response(JSON.stringify({ url: publicUrl, token }), {
+				headers: responseHeaders,
+			});
+		}
+
+		// GET /r/:token - public share link page
+		if (url.pathname.startsWith('/r/') && request.method === 'GET') {
+			const pathParts = url.pathname.split('/');
+			const token = pathParts[pathParts.length - 1];
+
+			if (!token || token.length === 0) {
+				return new Response('Invalid share link', { status: 404 });
+			}
+
+			// Get share link data from DO
+			const shareLinkDOStub = getShareLinkDO(env, token);
+			const response = await shareLinkDOStub.fetch(new Request('http://do/', { method: 'GET' }));
+
+			if (!response.ok) {
+				return new Response('Share link not found', { status: 404 });
+			}
+
+			const data = await response.json<{ data: ShareLinkData }>();
+			const receipt = data.data.receipt;
+
+			// Generate HTML page
+			const html = generateReceiptPage(receipt);
+
+			return new Response(html, {
+				headers: {
+					'Content-Type': 'text/html; charset=utf-8',
+				},
 			});
 		}
 

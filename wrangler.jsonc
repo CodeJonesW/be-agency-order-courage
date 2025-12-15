@@ -50,6 +50,11 @@
 				"name": "PLAYER_STATE_DO",
 				"class_name": "PlayerStateDO",
 				"script_name": "be-game-1"
+			},
+			{
+				"name": "SHARE_LINK_DO",
+				"class_name": "ShareLinkDO",
+				"script_name": "be-game-1"
 			}
 		]
 	}
