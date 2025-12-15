@@ -48,13 +48,11 @@
 		"bindings": [
 			{
 				"name": "PLAYER_STATE_DO",
-				"class_name": "PlayerStateDO",
-				"script_name": "be-agency-order-courage"
+				"class_name": "PlayerStateDO"
 			},
 			{
 				"name": "SHARE_LINK_DO",
-				"class_name": "ShareLinkDO",
-				"script_name": "be-agency-order-courage"
+				"class_name": "ShareLinkDO"
 			}
 		]
 	}
