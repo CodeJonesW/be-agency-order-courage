@@ -127,6 +127,41 @@ function getShareLinkDO(env: Env, token: string): DurableObjectStub {
 }
 
 /**
+ * Adds CORS headers to a response.
+ */
+function addCorsHeaders(headers: Headers, request: Request): Headers {
+	const origin = request.headers.get('Origin');
+	// Allow requests from the frontend domain
+	const allowedOrigins = [
+		'https://fe-agency-order-courage.pages.dev',
+		'http://localhost:5173',
+		'http://localhost:3000',
+	];
+
+	if (origin && allowedOrigins.includes(origin)) {
+		headers.set('Access-Control-Allow-Origin', origin);
+		headers.set('Access-Control-Allow-Credentials', 'true');
+		headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+		headers.set('Access-Control-Allow-Headers', 'Content-Type');
+		headers.set('Access-Control-Max-Age', '86400');
+	}
+
+	return headers;
+}
+
+/**
+ * Handles CORS preflight requests.
+ */
+function handleCorsPreflight(request: Request): Response | null {
+	if (request.method === 'OPTIONS') {
+		const headers = new Headers();
+		addCorsHeaders(headers, request);
+		return new Response(null, { headers, status: 204 });
+	}
+	return null;
+}
+
+/**
  * Generates HTML page for public receipt view.
  */
 function generateReceiptPage(receipt: ShareLinkData['receipt']): string {
@@ -297,6 +332,12 @@ export default {
 		const url = new URL(request.url);
 		const nowMs = Date.now();
 
+		// Handle CORS preflight
+		const preflightResponse = handleCorsPreflight(request);
+		if (preflightResponse) {
+			return preflightResponse;
+		}
+
 		// GET /api/state - returns current player state
 		if (url.pathname === '/api/state' && request.method === 'GET') {
 			const { playerId, headers: cookieHeaders } = getOrCreatePlayerId(request);
@@ -305,6 +346,7 @@ export default {
 
 			const responseHeaders = new Headers();
 			responseHeaders.set('Content-Type', 'application/json');
+			addCorsHeaders(responseHeaders, request);
 			
 			// Add cookie headers if new player was created
 			if (cookieHeaders) {
@@ -354,6 +396,7 @@ export default {
 
 			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
 			responseHeaders.set('Content-Type', 'application/json');
+			addCorsHeaders(responseHeaders, request);
 			
 			// If no quests available, return calm narrative
 			if (questCards.length === 0) {
@@ -395,6 +438,7 @@ export default {
 
 			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
 			responseHeaders.set('Content-Type', 'application/json');
+			addCorsHeaders(responseHeaders, request);
 			
 			return new Response(JSON.stringify({
 				state: stateToJSON(result.state),
@@ -472,6 +516,7 @@ export default {
 
 			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
 			responseHeaders.set('Content-Type', 'application/json');
+			addCorsHeaders(responseHeaders, request);
 			
 			return new Response(JSON.stringify({
 				state: stateToJSON(result.state),
@@ -558,6 +603,7 @@ export default {
 
 			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
 			responseHeaders.set('Content-Type', 'application/json');
+			addCorsHeaders(responseHeaders, request);
 
 			return new Response(JSON.stringify(data), {
 				headers: responseHeaders,
@@ -575,6 +621,7 @@ export default {
 
 			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
 			responseHeaders.set('Content-Type', 'application/json');
+			addCorsHeaders(responseHeaders, request);
 
 			if (!response.ok) {
 				return new Response(JSON.stringify({ error: 'Receipt not found' }), {
@@ -642,6 +689,7 @@ export default {
 
 			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
 			responseHeaders.set('Content-Type', 'application/json');
+			addCorsHeaders(responseHeaders, request);
 
 			return new Response(JSON.stringify({ url: publicUrl, token }), {
 				headers: responseHeaders,
