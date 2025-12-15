@@ -97,11 +97,19 @@ function getOrCreatePlayerId(request: Request): { playerId: string; headers?: He
 		const url = new URL(request.url);
 		const isProduction = url.protocol === 'https:';
 		
+		// Check if this is a cross-origin request
+		const origin = request.headers.get('Origin');
+		const isCrossOrigin = origin && new URL(origin).origin !== url.origin;
+		
+		// For cross-origin requests, use SameSite=None and Secure=true
+		// For same-origin, use SameSite=Lax
+		const sameSite = isCrossOrigin && isProduction ? 'none' : 'lax';
+		
 		const headersWithCookie = setCookie(headers, 'playerId', playerId, {
 			path: '/',
 			maxAge: 60 * 60 * 24 * 365, // 1 year
-			sameSite: 'lax',
-			secure: isProduction, // Auto-enable Secure in production
+			sameSite,
+			secure: isProduction, // Required for SameSite=None
 			httpOnly: true, // Prevent JavaScript access
 		});
 		return { playerId, headers: headersWithCookie };
