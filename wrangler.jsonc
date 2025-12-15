@@ -59,7 +59,7 @@
 	"migrations": [
 		{
 			"tag": "v1",
-			"new_classes": ["PlayerStateDO", "ShareLinkDO"]
+			"new_sqlite_classes": ["PlayerStateDO", "ShareLinkDO"]
 		}
 	]
 }
