@@ -39,7 +39,8 @@ import { generateDefaultShareText } from './http/receipt';
 import type { ShareLink, ShareLinkData } from './http/share-link';
 
 // Export Durable Object classes for wrangler binding
-export { PlayerStateDO, ShareLinkDO };
+export { PlayerStateDO };
+export { ShareLinkDO };
 
 /**
  * Worker "vertical slice" endpoint:
