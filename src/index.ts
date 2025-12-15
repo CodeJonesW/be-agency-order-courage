@@ -33,6 +33,8 @@ import { generateUUID } from './http/uuid';
 import { stateToJSON, deserializeState, serializeState, type StoredState } from './http/state-serialization';
 import { PlayerStateDO } from './infra/playerStateDO';
 import { summarize } from './domain/narrative';
+import type { Receipt } from './http/receipt';
+import { generateDefaultShareText } from './http/receipt';
 
 // Export Durable Object class for wrangler binding
 export { PlayerStateDO };
@@ -310,6 +312,41 @@ export default {
 
 			const narrative = summarize(result.events, result.state);
 
+			// Generate receipt
+			const quest = catalog.getQuestById(questId);
+			if (!quest) {
+				return Response.json({ error: 'Quest not found' }, { status: 404 });
+			}
+
+			const shareText = narrative?.shareText || generateDefaultShareText(quest.type);
+			const receipt: Receipt = {
+				id: crypto.randomUUID(),
+				createdAtMs: nowMs,
+				questId,
+				questType: quest.type,
+				tone: narrative?.tone || 'calm',
+				title: narrative?.title || 'Action completed',
+				line: narrative?.line || 'You took a step forward.',
+				shareText,
+			};
+
+			// Save receipt to DO
+			try {
+				const receiptResponse = await doStub.fetch(
+					new Request('http://do/receipts', {
+						method: 'POST',
+						body: JSON.stringify(receipt),
+						headers: { 'Content-Type': 'application/json' },
+					})
+				);
+				if (!receiptResponse.ok) {
+					console.error('Failed to save receipt:', await receiptResponse.text());
+				}
+			} catch (error) {
+				console.error('Error saving receipt:', error);
+				// Don't fail the request if receipt save fails
+			}
+
 			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
 			responseHeaders.set('Content-Type', 'application/json');
 			
@@ -317,6 +354,7 @@ export default {
 				state: stateToJSON(result.state),
 				events: result.events,
 				narrative,
+				receipt,
 			}), {
 				headers: responseHeaders,
 			});
@@ -380,6 +418,50 @@ export default {
 				putResult,
 				retrievedState: getData.state,
 				match: getData.state.stats.agency === testState.stats.agency,
+			});
+		}
+
+		// GET /api/receipts - get all receipts (most recent first)
+		if (url.pathname === '/api/receipts' && request.method === 'GET') {
+			const { playerId, headers: cookieHeaders } = getOrCreatePlayerId(request);
+			const doStub = getPlayerDO(env, playerId);
+
+			const response = await doStub.fetch(new Request('http://do/receipts', { method: 'GET' }));
+			if (!response.ok) {
+				return Response.json({ error: 'Failed to fetch receipts' }, { status: 500 });
+			}
+
+			const data = await response.json<{ receipts: Receipt[] }>();
+
+			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
+			responseHeaders.set('Content-Type', 'application/json');
+
+			return new Response(JSON.stringify(data), {
+				headers: responseHeaders,
+			});
+		}
+
+		// GET /api/receipts/:id - get a specific receipt
+		if (url.pathname.startsWith('/api/receipts/') && request.method === 'GET') {
+			const { playerId, headers: cookieHeaders } = getOrCreatePlayerId(request);
+			const pathParts = url.pathname.split('/');
+			const receiptId = pathParts[pathParts.length - 1];
+			const doStub = getPlayerDO(env, playerId);
+
+			const response = await doStub.fetch(new Request(`http://do/receipts/${receiptId}`, { method: 'GET' }));
+
+			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
+			responseHeaders.set('Content-Type', 'application/json');
+
+			if (!response.ok) {
+				return new Response(JSON.stringify({ error: 'Receipt not found' }), {
+					status: 404,
+					headers: responseHeaders,
+				});
+			}
+
+			return new Response(JSON.stringify(await response.json()), {
+				headers: responseHeaders,
 			});
 		}
 
