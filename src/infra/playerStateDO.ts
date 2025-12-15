@@ -24,6 +24,8 @@ function makeDefaultState(nowMs: number): StoredState {
       nowMs,
       lastMeaningfulActionMs: undefined,
     },
+    completedQuestIds: [],
+    completedAtByQuestId: {},
   };
 }
 

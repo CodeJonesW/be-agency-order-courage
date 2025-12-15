@@ -14,16 +14,26 @@ export interface StoredState {
   stats: { agency: number; courage: number; order: number };
   flags: string[];
   timeContext: TimeContext;
+  completedQuestIds: string[];
+  completedAtByQuestId: Record<string, number>;
 }
 
 /**
  * Converts CharacterState to storage format (Set → string[]).
+ * Note: completedQuestIds and completedAtByQuestId are managed separately
+ * and should be merged when calling this function.
  */
-export function serializeState(state: CharacterState): StoredState {
+export function serializeState(
+  state: CharacterState,
+  completedQuestIds: string[] = [],
+  completedAtByQuestId: Record<string, number> = {}
+): StoredState {
   return {
     stats: { ...state.stats },
     flags: Array.from(state.flags),
     timeContext: { ...state.timeContext },
+    completedQuestIds: [...completedQuestIds],
+    completedAtByQuestId: { ...completedAtByQuestId },
   };
 }
 

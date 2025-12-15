@@ -225,6 +225,15 @@ export interface QuestAvailability {
 export interface QuestNodeWithAvailability extends QuestNode {
   /** Availability conditions (gating) */
   availability: QuestAvailability;
+  /**
+   * Optional repeatability configuration.
+   * If not provided, quest is non-repeatable (disappears after completion).
+   * If provided, quest can be repeated after cooldownMs.
+   */
+  repeatable?: {
+    /** Cooldown in milliseconds before quest can be repeated */
+    cooldownMs: number;
+  };
 }
 
 // ============================================================================

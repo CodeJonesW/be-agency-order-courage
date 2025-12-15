@@ -114,21 +114,35 @@ function getPlayerDO(env: Env, playerId: string): DurableObjectStub {
 
 /**
  * Gets state from the Durable Object.
+ * Returns both CharacterState and completion tracking data.
  */
-async function getStateFromDO(doStub: DurableObjectStub, nowMs: number): Promise<CharacterState> {
+async function getStateFromDO(
+	doStub: DurableObjectStub,
+	nowMs: number
+): Promise<{ state: CharacterState; completedQuestIds: string[]; completedAtByQuestId: Record<string, number> }> {
 	const response = await doStub.fetch(new Request('http://do/get', { method: 'GET' }));
 	if (!response.ok) {
 		throw new Error(`Failed to get state from DO: ${response.status}`);
 	}
 	const data = await response.json<{ state: StoredState }>();
-	return deserializeState(data.state);
+	return {
+		state: deserializeState(data.state),
+		completedQuestIds: data.state.completedQuestIds || [],
+		completedAtByQuestId: data.state.completedAtByQuestId || {},
+	};
 }
 
 /**
  * Sets state in the Durable Object.
+ * Merges completion tracking data with CharacterState.
  */
-async function setStateInDO(doStub: DurableObjectStub, state: CharacterState): Promise<void> {
-	const stored = serializeState(state);
+async function setStateInDO(
+	doStub: DurableObjectStub,
+	state: CharacterState,
+	completedQuestIds: string[],
+	completedAtByQuestId: Record<string, number>
+): Promise<void> {
+	const stored = serializeState(state, completedQuestIds, completedAtByQuestId);
 	
 	const response = await doStub.fetch(
 		new Request('http://do/put', {
@@ -174,7 +188,7 @@ export default {
 				});
 			}
 			
-			return new Response(JSON.stringify({ state: stateToJSON(state) }), {
+			return new Response(JSON.stringify({ state: stateToJSON(state.state) }), {
 				headers: responseHeaders,
 			});
 		}
@@ -183,13 +197,32 @@ export default {
 		if (url.pathname === '/api/quests' && request.method === 'GET') {
 			const { playerId, headers: cookieHeaders } = getOrCreatePlayerId(request);
 			const doStub = getPlayerDO(env, playerId);
-			const state = await getStateFromDO(doStub, nowMs);
+			const { state, completedQuestIds, completedAtByQuestId } = await getStateFromDO(doStub, nowMs);
 
 			// Get all quests from catalog
 			const allQuests = catalog.listAll?.() ?? [];
 
+			// Filter out completed quests based on repeatability
+			const availableQuests = allQuests.filter((quest) => {
+				// If quest is completed
+				if (completedQuestIds.includes(quest.id)) {
+					// If quest is repeatable, check cooldown
+					if (quest.repeatable) {
+						const completedAt = completedAtByQuestId[quest.id];
+						if (completedAt !== undefined) {
+							const elapsed = nowMs - completedAt;
+							return elapsed >= quest.repeatable.cooldownMs;
+						}
+					}
+					// Non-repeatable quests are filtered out
+					return false;
+				}
+				// Quest not completed, available
+				return true;
+			});
+
 			// Use rules pipeline directly: filter → rank → select
-			const selectedQuests = chooseQuests(state, allQuests, nowMs, 3);
+			const selectedQuests = chooseQuests(state, availableQuests, nowMs, 3);
 
 			// Convert to DTOs (excludes consequence and availability)
 			const questCards: QuestCardDTO[] = selectedQuests.map(toQuestCardDTO);
@@ -197,11 +230,21 @@ export default {
 			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
 			responseHeaders.set('Content-Type', 'application/json');
 			
-			const response = new Response(JSON.stringify({ quests: questCards }), {
+			// If no quests available, return calm narrative
+			if (questCards.length === 0) {
+				const calmNarrative = {
+					tone: 'calm' as const,
+					title: 'Quiet moment',
+					line: "Nothing urgent right now. Come back when you want a next step.",
+				};
+				return new Response(JSON.stringify({ quests: [], narrative: calmNarrative }), {
+					headers: responseHeaders,
+				});
+			}
+
+			return new Response(JSON.stringify({ quests: questCards }), {
 				headers: responseHeaders,
 			});
-
-			return response;
 		}
 
 		// POST /api/quests/:id/start - starts a quest
@@ -211,13 +254,13 @@ export default {
 			const questId = pathParts[pathParts.length - 2]; // Get quest id before '/start'
 
 			const doStub = getPlayerDO(env, playerId);
-			const state = await getStateFromDO(doStub, nowMs);
+			const { state, completedQuestIds, completedAtByQuestId } = await getStateFromDO(doStub, nowMs);
 
 			const result = startQuest(state, questId, catalog, nowMs);
 			
 			// Save state and wait for it to complete
 			try {
-				await setStateInDO(doStub, result.state);
+				await setStateInDO(doStub, result.state, completedQuestIds, completedAtByQuestId);
 			} catch (error) {
 				console.error('Failed to save state after startQuest:', error);
 				return Response.json({ error: 'Failed to save state', details: String(error) }, { status: 500 });
@@ -244,13 +287,22 @@ export default {
 			const questId = pathParts[pathParts.length - 2]; // Get quest id before '/complete'
 
 			const doStub = getPlayerDO(env, playerId);
-			const state = await getStateFromDO(doStub, nowMs);
+			const { state, completedQuestIds, completedAtByQuestId } = await getStateFromDO(doStub, nowMs);
 
 			const result = completeQuest(state, questId, catalog, nowMs);
 			
+			// Track completed quest
+			const updatedCompletedQuestIds = completedQuestIds.includes(questId)
+				? completedQuestIds
+				: [...completedQuestIds, questId];
+			const updatedCompletedAtByQuestId = {
+				...completedAtByQuestId,
+				[questId]: nowMs,
+			};
+			
 			// Save state and wait for it to complete
 			try {
-				await setStateInDO(doStub, result.state);
+				await setStateInDO(doStub, result.state, updatedCompletedQuestIds, updatedCompletedAtByQuestId);
 			} catch (error) {
 				console.error('Failed to save state after completeQuest:', error);
 				return Response.json({ error: 'Failed to save state', details: String(error) }, { status: 500 });
@@ -301,8 +353,10 @@ export default {
 				timeContext: {
 					range: 'recent',
 					nowMs: Date.now(),
-					lastMeaningfulActionMs: Date.now(),
+					lastMeaningfulActionMs: Date.now() - 1000,
 				},
+				completedQuestIds: [],
+				completedAtByQuestId: {},
 			};
 			
 			// Try to save it
