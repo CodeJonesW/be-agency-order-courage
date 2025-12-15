@@ -1,4 +1,4 @@
-# be-game-1 / fe-game-1
+# be-agency-order-courage / fe-game-1
 
 Start here: `docs/README.md` (canonical constraints)
 

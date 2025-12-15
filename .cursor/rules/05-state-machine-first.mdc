@@ -1,10 +1,10 @@
 ---
 description: Highest-leverage backend constraint: implement the Life Engine (state machine + rules) before APIs/UI/DB complexity.
-globs: be-game-1/**
+globs: be-agency-order-courage/**
 alwaysApply: false
 ---
 
-# State Machine First (be-game-1)
+# State Machine First (be-agency-order-courage)
 
 ## Goal
 Build the "Life Engine" as deterministic domain logic before building routes, persistence details, or UI.

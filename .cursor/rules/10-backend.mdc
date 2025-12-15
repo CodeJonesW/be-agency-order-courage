@@ -1,10 +1,10 @@
 ---
-description: Backend rule for be-game-1. Prefer state-machine / rules-first design; keep APIs minimal.
-globs: be-game-1/**
+description: Backend rule for be-agency-order-courage. Prefer state-machine / rules-first design; keep APIs minimal.
+globs: be-agency-order-courage/**
 alwaysApply: false
 ---
 
-# Backend Guidance (be-game-1)
+# Backend Guidance (be-agency-order-courage)
 
 ## Architectural intent
 - Build a "life engine" first: state transitions, quest graph, time behavior.
