@@ -55,5 +55,11 @@
 				"class_name": "ShareLinkDO"
 			}
 		]
-	}
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_classes": ["PlayerStateDO", "ShareLinkDO"]
+		}
+	]
 }
