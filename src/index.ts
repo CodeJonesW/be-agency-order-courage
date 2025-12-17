@@ -81,6 +81,25 @@ function toQuestCardDTO(quest: QuestNodeWithAvailability): QuestCardDTO {
 }
 
 /**
+ * Checks if any quest was completed today (same calendar day in UTC).
+ * Returns true if any completion timestamp falls within today's date.
+ */
+function hasCompletedQuestToday(completedAtByQuestId: Record<string, number>, nowMs: number): boolean {
+	const todayStart = new Date(nowMs);
+	todayStart.setUTCHours(0, 0, 0, 0);
+	const todayStartMs = todayStart.getTime();
+	
+	const todayEnd = new Date(nowMs);
+	todayEnd.setUTCHours(23, 59, 59, 999);
+	const todayEndMs = todayEnd.getTime();
+	
+	// Check if any completion timestamp falls within today
+	return Object.values(completedAtByQuestId).some(
+		completedAt => completedAt >= todayStartMs && completedAt <= todayEndMs
+	);
+}
+
+/**
  * Gets or creates a playerId from cookies or header.
  * Returns the playerId and a Headers object with Set-Cookie to refresh/extend the cookie.
  * Always refreshes the cookie to extend its lifetime, preventing expiration.
@@ -375,11 +394,27 @@ export default {
 			});
 		}
 
-		// GET /api/quests - returns 0-3 quest cards selected by quest logic from stored state
+		// GET /api/quests - returns 0-1 quest cards selected by quest logic from stored state
 		if (url.pathname === '/api/quests' && request.method === 'GET') {
 			const { playerId, headers: cookieHeaders } = getOrCreatePlayerId(request);
 			const doStub = getPlayerDO(env, playerId);
 			const { state, completedQuestIds, completedAtByQuestId } = await getStateFromDO(doStub, nowMs);
+
+			const responseHeaders = new Headers(cookieHeaders);
+			responseHeaders.set('Content-Type', 'application/json');
+			addCorsHeaders(responseHeaders, request);
+
+			// Check if user already completed a quest today (1 quest per day limit)
+			if (hasCompletedQuestToday(completedAtByQuestId, nowMs)) {
+				const calmNarrative = {
+					tone: 'calm' as const,
+					title: 'Rest for today',
+					line: "You've already taken a step today. Come back tomorrow for your next quest.",
+				};
+				return new Response(JSON.stringify({ quests: [], narrative: calmNarrative, playerId }), {
+					headers: responseHeaders,
+				});
+			}
 
 			// Get all quests from catalog
 			const allQuests = catalog.listAll?.() ?? [];
@@ -408,10 +443,6 @@ export default {
 
 			// Convert to DTOs (excludes consequence and availability)
 			const questCards: QuestCardDTO[] = selectedQuests.map(toQuestCardDTO);
-
-			const responseHeaders = new Headers(cookieHeaders);
-			responseHeaders.set('Content-Type', 'application/json');
-			addCorsHeaders(responseHeaders, request);
 			
 			// If no quests available, return calm narrative
 			if (questCards.length === 0) {
