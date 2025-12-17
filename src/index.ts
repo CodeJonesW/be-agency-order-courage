@@ -82,40 +82,46 @@ function toQuestCardDTO(quest: QuestNodeWithAvailability): QuestCardDTO {
 
 /**
  * Gets or creates a playerId from cookies.
- * Returns the playerId and a Headers object with Set-Cookie if a new ID was generated.
+ * Returns the playerId and a Headers object with Set-Cookie to refresh/extend the cookie.
+ * Always refreshes the cookie to extend its lifetime, preventing expiration.
  */
-function getOrCreatePlayerId(request: Request): { playerId: string; headers?: Headers } {
+function getOrCreatePlayerId(request: Request): { playerId: string; headers: Headers } {
 	const cookieHeader = request.headers.get('Cookie');
 	let playerId = getCookie(cookieHeader, 'playerId');
 
 	if (!playerId) {
-		// Generate new UUID and set cookie
+		// Generate new UUID
 		playerId = generateUUID();
-		const headers = new Headers();
-		
-		// Detect if we're in production (HTTPS)
-		const url = new URL(request.url);
-		const isProduction = url.protocol === 'https:';
-		
-		// Check if this is a cross-origin request
-		const origin = request.headers.get('Origin');
-		const isCrossOrigin = origin && new URL(origin).origin !== url.origin;
-		
-		// For cross-origin requests, use SameSite=None and Secure=true
-		// For same-origin, use SameSite=Lax
-		const sameSite = isCrossOrigin && isProduction ? 'none' : 'lax';
-		
-		const headersWithCookie = setCookie(headers, 'playerId', playerId, {
-			path: '/',
-			maxAge: 60 * 60 * 24 * 365, // 1 year
-			sameSite,
-			secure: isProduction, // Required for SameSite=None
-			httpOnly: true, // Prevent JavaScript access
-		});
-		return { playerId, headers: headersWithCookie };
 	}
 
-	return { playerId };
+	// Always refresh the cookie to extend its lifetime
+	// This prevents cookies from expiring and losing player progress
+	const headers = new Headers();
+	
+	// Detect if we're in production (HTTPS)
+	const url = new URL(request.url);
+	const isProduction = url.protocol === 'https:';
+	
+	// Check if this is a cross-origin request
+	const origin = request.headers.get('Origin');
+	const isCrossOrigin = origin && new URL(origin).origin !== url.origin;
+	
+	// For cross-origin requests, use SameSite=None and Secure=true
+	// For same-origin, use SameSite=Lax
+	// Note: SameSite=None REQUIRES Secure=true, so only use it in production
+	const sameSite = isCrossOrigin && isProduction ? 'none' : 'lax';
+	// Secure must be true when SameSite=None, otherwise use isProduction
+	const secure = sameSite === 'none' ? true : isProduction;
+	
+	const headersWithCookie = setCookie(headers, 'playerId', playerId, {
+		path: '/',
+		maxAge: 60 * 60 * 24 * 365, // 1 year
+		sameSite,
+		secure, // Required for SameSite=None, otherwise matches production
+		httpOnly: true, // Prevent JavaScript access
+	});
+	
+	return { playerId, headers: headersWithCookie };
 }
 
 /**
@@ -352,16 +358,9 @@ export default {
 			const doStub = getPlayerDO(env, playerId);
 			const state = await getStateFromDO(doStub, nowMs);
 
-			const responseHeaders = new Headers();
+			const responseHeaders = new Headers(cookieHeaders);
 			responseHeaders.set('Content-Type', 'application/json');
 			addCorsHeaders(responseHeaders, request);
-			
-			// Add cookie headers if new player was created
-			if (cookieHeaders) {
-				cookieHeaders.forEach((value, key) => {
-					responseHeaders.append(key, value);
-				});
-			}
 			
 			return new Response(JSON.stringify({ state: stateToJSON(state.state) }), {
 				headers: responseHeaders,
@@ -397,12 +396,12 @@ export default {
 			});
 
 			// Use rules pipeline directly: filter → rank → select
-			const selectedQuests = chooseQuests(state, availableQuests, nowMs, 3);
+			const selectedQuests = chooseQuests(state, availableQuests, nowMs, 1);
 
 			// Convert to DTOs (excludes consequence and availability)
 			const questCards: QuestCardDTO[] = selectedQuests.map(toQuestCardDTO);
 
-			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
+			const responseHeaders = new Headers(cookieHeaders);
 			responseHeaders.set('Content-Type', 'application/json');
 			addCorsHeaders(responseHeaders, request);
 			
@@ -444,7 +443,7 @@ export default {
 
 			const narrative = summarize(result.events, result.state);
 
-			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
+			const responseHeaders = new Headers(cookieHeaders);
 			responseHeaders.set('Content-Type', 'application/json');
 			addCorsHeaders(responseHeaders, request);
 			
@@ -522,7 +521,7 @@ export default {
 				// Don't fail the request if receipt save fails
 			}
 
-			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
+			const responseHeaders = new Headers(cookieHeaders);
 			responseHeaders.set('Content-Type', 'application/json');
 			addCorsHeaders(responseHeaders, request);
 			
@@ -609,7 +608,7 @@ export default {
 
 			const data = await response.json<{ receipts: Receipt[] }>();
 
-			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
+			const responseHeaders = new Headers(cookieHeaders);
 			responseHeaders.set('Content-Type', 'application/json');
 			addCorsHeaders(responseHeaders, request);
 
@@ -627,7 +626,7 @@ export default {
 
 			const response = await doStub.fetch(new Request(`http://do/receipts/${receiptId}`, { method: 'GET' }));
 
-			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
+			const responseHeaders = new Headers(cookieHeaders);
 			responseHeaders.set('Content-Type', 'application/json');
 			addCorsHeaders(responseHeaders, request);
 
@@ -695,7 +694,7 @@ export default {
 			// Generate public URL
 			const publicUrl = `${url.origin}/r/${token}`;
 
-			const responseHeaders = cookieHeaders ? new Headers(cookieHeaders) : new Headers();
+			const responseHeaders = new Headers(cookieHeaders);
 			responseHeaders.set('Content-Type', 'application/json');
 			addCorsHeaders(responseHeaders, request);
 
