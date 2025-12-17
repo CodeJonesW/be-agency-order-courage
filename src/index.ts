@@ -81,13 +81,21 @@ function toQuestCardDTO(quest: QuestNodeWithAvailability): QuestCardDTO {
 }
 
 /**
- * Gets or creates a playerId from cookies.
+ * Gets or creates a playerId from cookies or header.
  * Returns the playerId and a Headers object with Set-Cookie to refresh/extend the cookie.
  * Always refreshes the cookie to extend its lifetime, preventing expiration.
+ * 
+ * Fallback: Also checks X-Player-Id header for mobile Safari compatibility
+ * (Safari blocks third-party cookies even with SameSite=None).
  */
 function getOrCreatePlayerId(request: Request): { playerId: string; headers: Headers } {
 	const cookieHeader = request.headers.get('Cookie');
 	let playerId = getCookie(cookieHeader, 'playerId');
+
+	// Fallback: Check header for mobile Safari (cookies blocked by ITP)
+	if (!playerId) {
+		playerId = request.headers.get('X-Player-Id');
+	}
 
 	if (!playerId) {
 		// Generate new UUID
@@ -156,7 +164,7 @@ function addCorsHeaders(headers: Headers, request: Request): Headers {
 		headers.set('Access-Control-Allow-Origin', origin);
 		headers.set('Access-Control-Allow-Credentials', 'true');
 		headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-		headers.set('Access-Control-Allow-Headers', 'Content-Type');
+		headers.set('Access-Control-Allow-Headers', 'Content-Type, X-Player-Id');
 		headers.set('Access-Control-Max-Age', '86400');
 	}
 
@@ -362,7 +370,7 @@ export default {
 			responseHeaders.set('Content-Type', 'application/json');
 			addCorsHeaders(responseHeaders, request);
 			
-			return new Response(JSON.stringify({ state: stateToJSON(state.state) }), {
+			return new Response(JSON.stringify({ state: stateToJSON(state.state), playerId }), {
 				headers: responseHeaders,
 			});
 		}
@@ -412,12 +420,12 @@ export default {
 					title: 'Quiet moment',
 					line: "Nothing urgent right now. Come back when you want a next step.",
 				};
-				return new Response(JSON.stringify({ quests: [], narrative: calmNarrative }), {
+				return new Response(JSON.stringify({ quests: [], narrative: calmNarrative, playerId }), {
 					headers: responseHeaders,
 				});
 			}
 
-			return new Response(JSON.stringify({ quests: questCards }), {
+			return new Response(JSON.stringify({ quests: questCards, playerId }), {
 				headers: responseHeaders,
 			});
 		}
@@ -451,6 +459,7 @@ export default {
 				state: stateToJSON(result.state),
 				events: result.events,
 				narrative,
+				playerId,
 			}), {
 				headers: responseHeaders,
 			});
@@ -530,6 +539,7 @@ export default {
 				events: result.events,
 				narrative,
 				receipt,
+				playerId,
 			}), {
 				headers: responseHeaders,
 			});
