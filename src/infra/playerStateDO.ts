@@ -12,6 +12,7 @@ import { DurableObject } from 'cloudflare:workers';
 import type { CharacterState } from '../domain/state';
 import { serializeState, deserializeState, type StoredState } from '../http/state-serialization';
 import type { Receipt } from '../http/receipt';
+import type { QuestAction } from '../http/quest-action';
 
 /**
  * Default state for new players.
@@ -129,6 +130,44 @@ export class PlayerStateDO extends DurableObject<Env> {
       } catch (error) {
         console.error('Error saving receipt:', error);
         return Response.json({ error: 'Invalid receipt format', details: String(error) }, { status: 400 });
+      }
+    }
+
+    // GET /quest-actions - get all quest actions (most recent first)
+    if (url.pathname === '/quest-actions' && request.method === 'GET') {
+      const actions = await this.ctx.storage.get<QuestAction[]>('questActions') || [];
+      // Sort by createdAtMs descending (most recent first)
+      const sortedActions = actions.sort((a, b) => b.createdAtMs - a.createdAtMs);
+      return Response.json({ actions: sortedActions });
+    }
+
+    // GET /quest-actions/:questId - get actions for a specific quest
+    if (url.pathname.startsWith('/quest-actions/') && request.method === 'GET') {
+      const questId = url.pathname.split('/').pop();
+      const actions = await this.ctx.storage.get<QuestAction[]>('questActions') || [];
+      const questActions = actions.filter((a) => a.questId === questId);
+      
+      return Response.json({ actions: questActions });
+    }
+
+    // POST /quest-actions - add a new quest action
+    if (url.pathname === '/quest-actions' && request.method === 'POST') {
+      try {
+        const action = await request.json() as QuestAction;
+        const actions = await this.ctx.storage.get<QuestAction[]>('questActions') || [];
+        
+        // Add new action at the beginning (most recent first)
+        const updatedActions = [action, ...actions];
+        
+        // Keep only the most recent 100
+        const cappedActions = updatedActions.slice(0, 100);
+        
+        await this.ctx.storage.put('questActions', cappedActions);
+        
+        return Response.json({ success: true });
+      } catch (error) {
+        console.error('Error saving quest action:', error);
+        return Response.json({ error: 'Invalid quest action format', details: String(error) }, { status: 400 });
       }
     }
 

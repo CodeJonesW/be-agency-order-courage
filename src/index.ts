@@ -37,6 +37,7 @@ import { summarize } from './domain/narrative';
 import type { Receipt } from './http/receipt';
 import { generateDefaultShareText } from './http/receipt';
 import type { ShareLink, ShareLinkData } from './http/share-link';
+import type { QuestAction } from './http/quest-action';
 
 // Export Durable Object classes for wrangler binding
 // These must be exported for Wrangler to create bindings
@@ -637,23 +638,48 @@ export default {
 			});
 		}
 
-		// GET /api/receipts - get all receipts (most recent first)
+		// GET /api/receipts - get all receipts (most recent first) with associated actions
 		if (url.pathname === '/api/receipts' && request.method === 'GET') {
 			const { playerId, headers: cookieHeaders } = getOrCreatePlayerId(request);
 			const doStub = getPlayerDO(env, playerId);
 
-			const response = await doStub.fetch(new Request('http://do/receipts', { method: 'GET' }));
-			if (!response.ok) {
+			// Fetch receipts and actions in parallel
+			const [receiptsResponse, actionsResponse] = await Promise.all([
+				doStub.fetch(new Request('http://do/receipts', { method: 'GET' })),
+				doStub.fetch(new Request('http://do/quest-actions', { method: 'GET' })),
+			]);
+
+			if (!receiptsResponse.ok) {
 				return Response.json({ error: 'Failed to fetch receipts' }, { status: 500 });
 			}
 
-			const data = await response.json<{ receipts: Receipt[] }>();
+			const receiptsData = await receiptsResponse.json<{ receipts: Receipt[] }>();
+			const actionsData = await actionsResponse.json<{ actions: QuestAction[] }>();
+
+			// Create a map of questId -> most recent action
+			const actionsByQuestId = new Map<string, QuestAction>();
+			for (const action of actionsData.actions) {
+				// Keep only the most recent action for each quest
+				const existing = actionsByQuestId.get(action.questId);
+				if (!existing || action.createdAtMs > existing.createdAtMs) {
+					actionsByQuestId.set(action.questId, action);
+				}
+			}
+
+			// Attach actions to receipts
+			const receiptsWithActions = receiptsData.receipts.map((receipt) => {
+				const action = actionsByQuestId.get(receipt.questId);
+				return {
+					...receipt,
+					action: action?.action || undefined,
+				};
+			});
 
 			const responseHeaders = new Headers(cookieHeaders);
 			responseHeaders.set('Content-Type', 'application/json');
 			addCorsHeaders(responseHeaders, request);
 
-			return new Response(JSON.stringify(data), {
+			return new Response(JSON.stringify({ receipts: receiptsWithActions }), {
 				headers: responseHeaders,
 			});
 		}
@@ -742,6 +768,57 @@ export default {
 			return new Response(JSON.stringify({ url: publicUrl, token }), {
 				headers: responseHeaders,
 			});
+		}
+
+		// POST /api/quests/:id/action - record a user action for a quest
+		if (url.pathname.startsWith('/api/quests/') && url.pathname.endsWith('/action') && request.method === 'POST') {
+			const { playerId, headers: cookieHeaders } = getOrCreatePlayerId(request);
+			const pathParts = url.pathname.split('/');
+			const questId = pathParts[pathParts.length - 2]; // Get quest id before '/action'
+
+			try {
+				const body = await request.json() as { action: string };
+				
+				if (!body.action || typeof body.action !== 'string' || body.action.trim().length === 0) {
+					return Response.json({ error: 'Action text is required' }, { status: 400 });
+				}
+
+				const doStub = getPlayerDO(env, playerId);
+				
+				// Create quest action
+				const questAction: QuestAction = {
+					id: crypto.randomUUID(),
+					questId,
+					action: body.action.trim(),
+					createdAtMs: nowMs,
+				};
+
+				// Save to DO
+				const response = await doStub.fetch(
+					new Request('http://do/quest-actions', {
+						method: 'POST',
+						body: JSON.stringify(questAction),
+						headers: { 'Content-Type': 'application/json' },
+					})
+				);
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					console.error('Failed to save quest action:', errorText);
+					return Response.json({ error: 'Failed to save action' }, { status: 500 });
+				}
+
+				const responseHeaders = new Headers(cookieHeaders);
+				responseHeaders.set('Content-Type', 'application/json');
+				addCorsHeaders(responseHeaders, request);
+
+				return new Response(JSON.stringify({ success: true, action: questAction }), {
+					headers: responseHeaders,
+				});
+			} catch (error) {
+				console.error('Error recording quest action:', error);
+				return Response.json({ error: 'Invalid request', details: String(error) }, { status: 400 });
+			}
 		}
 
 		// GET /r/:token - public share link page
